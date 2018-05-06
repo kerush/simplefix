@@ -27,6 +27,10 @@ from .constants import EQUALS_BYTE, SOH_BYTE
 from .message import FixMessage, fix_val
 from .data import RAW_DATA_TAGS, RAW_LEN_TAGS
 
+CR = b"\r"
+LF = b"\n"
+CRLF = CR + LF
+
 
 class FixParser(object):
     """FIX protocol message parser.
@@ -57,7 +61,62 @@ class FixParser(object):
 
         # Copy raw field data tags.
         self.raw_data_tags = RAW_DATA_TAGS[:]
+
+        # Behaviour flags.
+        self.raise_exceptions = False
+        self.eol_is_eom = False
+        self.ignore_leading_text = False
+        self.validate_checksum = False
         return
+
+    def set_error_exceptions(self, value=True):
+        """Set whether to raise exceptions for parsing errors.
+
+        :param value: If True, raise exceptions for parsing errors.
+
+        If False (the default), parsing errors cause messages to be silently
+        discarded.  Otherwise, exceptions will be thrown describing the
+        detected issue."""
+        pass
+
+    def set_message_per_line(self, value=True):
+        """If set, each line of text is treated as a separate message.
+
+        :param value: If True, treat each line as message.
+
+        When parsing log files, it's common to use the end-of-line as a
+        message boundary, in some cases omitting the CheckSum(10) field
+        as well.  The setting will cause the parser to treat any of CR,
+        LF, or CRLF as the message boundary."""
+        self.eol_is_eom = value
+        return
+
+    def set_ignore_leading_text(self, start="8=FIX."):
+        """Ignore any characters prior to the specified start string.
+
+        :param start: Any character prior to this are ignored.
+
+        This is typically useful when parsing a FIX log file, which will
+        often have a timestamp and direction prepended to the actual
+        message content.
+
+        The default value matches the required first tag-value for
+        standard FIX messages."""
+        pass
+
+    def set_validate_checksum(self, value=True):
+        """Ensure that the FIX checksum value is correct.
+
+        :param value: If True, validate checksun; otherwise ignore it.
+
+        If set, messages must have a CheckSum (10) field as the last
+        field in the message, and its value must be a 3-digit decimal
+        integer, which will be used to validate the content of the
+        message as specified by the FIX standards.
+
+        If set, and validation fails, get_message() will return None or
+        throw an exception, depending on the parser configuration."""
+        pass
 
     def add_raw(self, length_tag, value_tag):
         """Define the tags used for a private raw data field.
@@ -137,9 +196,11 @@ class FixParser(object):
         in_tag = True
         raw_len = 0
         tag = 0
+        eom = False
 
         while point < len(self.buf):
-            if in_tag and self.buf[point] == EQUALS_BYTE:
+            b = self.buf[point]
+            if in_tag and b == EQUALS_BYTE:
                 tag_string = self.buf[start:point]
                 point += 1
 
@@ -159,7 +220,7 @@ class FixParser(object):
                     in_tag = False
                     start = point
 
-            elif self.buf[point] == SOH_BYTE:
+            elif b == SOH_BYTE or (self.eol_is_eom and b in CRLF):
                 value = self.buf[start:point]
                 self.pairs.append((tag, value))
                 self.buf = self.buf[point + 1:]
@@ -169,6 +230,13 @@ class FixParser(object):
 
                 if tag in self.raw_len_tags:
                     raw_len = int(value)
+
+                if self.eol_is_eom and b in CRLF:
+                    eom = True
+                    break
+
+            elif in_tag and self.eol_is_eom and b in CRLF:
+                break
 
             point += 1
 
@@ -184,15 +252,18 @@ class FixParser(object):
         if len(self.pairs) == 0:
             return None
 
-        # Look for checksum.
-        index = 0
-        while index < len(self.pairs) and self.pairs[index][0] != 10:
-            index += 1
+        # Look for end of message.
+        if eom:
+            index = len(self.pairs) - 1
+        else:
+            index = 0
+            while index < len(self.pairs) and self.pairs[index][0] != 10:
+                index += 1
 
-        if index == len(self.pairs):
-            return None
+            if index == len(self.pairs):
+                return None
 
-        # Found checksum, so we have a complete message.
+        # Extract message.
         m = FixMessage()
         pairs = self.pairs[:index + 1]
         for tag, value in pairs:

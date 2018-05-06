@@ -220,6 +220,62 @@ class ParserTests(unittest.TestCase):
         self.assertIsNotNone(msg)
         return
 
+    def test_eol_is_eom_after_soh(self):
+        """Test parsing with EOL indicating EOM."""
+
+        raw = b"8=FIX.4.2" + SOH_STR + \
+              b"9=169" + SOH_STR + \
+              b"35=A" + SOH_STR + \
+              b"52=20171213-01:41:08.063" + SOH_STR + \
+              b"49=HelloWorld" + SOH_STR + \
+              b"56=1234" + SOH_STR + \
+              b"34=1" + SOH_STR + \
+              b"96=ABC=DE" + SOH_STR + \
+              b"98=0" + SOH_STR + \
+              b"108=30" + SOH_STR + \
+              b"554=HelloWorld" + SOH_STR + \
+              b"8013=Y" + SOH_STR + \
+              b"\n" + \
+              b"8=FIX.4,2" + SOH_STR
+
+        raw = b"8=FIX.4.2" + SOH_STR + b"2=bar\n" + \
+              b"8=FIX.4.2" + SOH_STR + b"2=baz" + SOH_STR
+
+        parser = FixParser()
+        parser.set_message_per_line()
+        parser.append_buffer(raw)
+        msg = parser.get_message()
+
+        self.assertIsNotNone(msg)
+        return
+
+    def test_eol_is_eom_ends_last_field(self):
+        """Test parsing with EOL indicating EOM."""
+
+        raw = b"8=FIX.4.2" + SOH_STR + \
+              b"9=169" + SOH_STR + \
+              b"35=A" + SOH_STR + \
+              b"52=20171213-01:41:08.063" + SOH_STR + \
+              b"49=HelloWorld" + SOH_STR + \
+              b"56=1234" + SOH_STR + \
+              b"34=1" + SOH_STR + \
+              b"96=ABC=DE" + SOH_STR + \
+              b"98=0" + SOH_STR + \
+              b"108=30" + SOH_STR + \
+              b"554=HelloWorld" + SOH_STR + \
+              b"8013=Y" + b"\n" + \
+              b"8=FIX.4,2" + SOH_STR
+
+        parser = FixParser()
+        parser.set_message_per_line()
+        parser.append_buffer(raw)
+        msg = parser.get_message()
+
+        self.assertIsNotNone(msg)
+        return
+
+
+# b"2018-05-06 12:34:56.789 RECV "
 
 if __name__ == "__main__":
     unittest.main()
