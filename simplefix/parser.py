@@ -66,6 +66,7 @@ class FixParser(object):
         self.raise_exceptions = False
         self.eol_is_eom = False
         self.ignore_leading_text = False
+        self.start_with_begin = True
         self.validate_checksum = False
         return
 
@@ -89,6 +90,16 @@ class FixParser(object):
         as well.  The setting will cause the parser to treat any of CR,
         LF, or CRLF as the message boundary."""
         self.eol_is_eom = value
+        return
+
+    def set_start_with_begin_string(self, value=True):
+        """If set, the first field of a message must be BeginString (8).
+
+        :param value: If True, check first field is begin.
+
+        In some cases, especially FIX-encoded stored data, there might
+        not be a Begin String (8) at the start of each message."""
+        self.start_with_begin = value
         return
 
     def set_ignore_leading_text(self, start="8=FIX."):
@@ -204,7 +215,7 @@ class FixParser(object):
                 tag_string = self.buf[start:point]
                 point += 1
 
-                tag = int(tag_string)
+                tag = int(tag_string)   # FIXME: BadTagError
                 if tag in self.raw_data_tags and raw_len > 0:
                     if raw_len > len(self.buf) - point:
                         break
@@ -220,6 +231,10 @@ class FixParser(object):
                     in_tag = False
                     start = point
 
+            elif in_tag and self.eol_is_eom and b in CRLF:
+                eom = True
+                break
+
             elif b == SOH_BYTE or (self.eol_is_eom and b in CRLF):
                 value = self.buf[start:point]
                 self.pairs.append((tag, value))
@@ -229,14 +244,13 @@ class FixParser(object):
                 in_tag = True
 
                 if tag in self.raw_len_tags:
-                    raw_len = int(value)
+                    raw_len = int(value)   # FIXME: BadLengthValue
 
                 if self.eol_is_eom and b in CRLF:
                     eom = True
                     break
 
-            elif in_tag and self.eol_is_eom and b in CRLF:
-                break
+                continue
 
             point += 1
 
@@ -245,12 +259,13 @@ class FixParser(object):
             return None
 
         # Check first pair is FIX BeginString.
-        while self.pairs and self.pairs[0][0] != 8:
-            # Discard pairs until we find the beginning of a message.
-            self.pairs.pop(0)
+        if self.start_with_begin:
+            while self.pairs and self.pairs[0][0] != 8:
+                # Discard pairs until we find the beginning of a message.
+                self.pairs.pop(0)
 
-        if len(self.pairs) == 0:
-            return None
+            if len(self.pairs) == 0:
+                return None
 
         # Look for end of message.
         if eom:
