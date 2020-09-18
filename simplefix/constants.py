@@ -38,7 +38,8 @@ else:
     SOH_STR = b'\x01'
 
 # Tag 1
-TAG_ACCOUNT = b'1'
+TAG_ACCOUNT_INT = 1
+TAG_ACCOUNT = str(TAG_ACCOUNT_INT).encode()
 
 # Tag 2
 TAG_ADVID = b'2'
